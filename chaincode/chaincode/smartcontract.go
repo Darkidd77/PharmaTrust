@@ -7,10 +7,12 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
+// SmartContract provides functions for managing an Asset
 type SmartContract struct {
 	contractapi.Contract
 }
 
+// MedsData describes basic details of what makes up a medicine data asset
 type MedsData struct {
 	UniqueKey           string  `json:"uniqueKey"`
 	BatchNo             string  `json:"batchNo"`
@@ -23,12 +25,20 @@ type MedsData struct {
 	Humidity            float64 `json:"humidity"`
 }
 
+// CreateMedsData issues a new asset to the world state with given details.
 func (s *SmartContract) CreateMedsData(ctx contractapi.TransactionContextInterface, batchNo string, warehouseNo string, iotId string, temperatureSensorId string, humiditySensorId string, timestamp string, temperature float64, humidity float64) error {
-	// Create a unique key based on the batchNo and timestamp
 	uniqueKey := fmt.Sprintf("%s_%s", batchNo, timestamp)
 
+	exists, err := s.AssetExists(ctx, uniqueKey)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("the asset %s already exists", uniqueKey)
+	}
+
 	data := MedsData{
-		UniqueKey:           uniqueKey, // Set the unique key
+		UniqueKey:           uniqueKey,
 		BatchNo:             batchNo,
 		WarehouseNo:         warehouseNo,
 		IotId:               iotId,
@@ -43,28 +53,10 @@ func (s *SmartContract) CreateMedsData(ctx contractapi.TransactionContextInterfa
 		return err
 	}
 
-	// Use the unique key for the PutState call
 	return ctx.GetStub().PutState(uniqueKey, dataJSON)
 }
 
-func (s *SmartContract) ReadMedsData(ctx contractapi.TransactionContextInterface, id string) (*MedsData, error) {
-	dataJSON, err := ctx.GetStub().GetState(id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from world state: %v", err)
-	}
-	if dataJSON == nil {
-		return nil, fmt.Errorf("the data for id %s does not exist", id)
-	}
-
-	var data MedsData
-	err = json.Unmarshal(dataJSON, &data)
-	if err != nil {
-		return nil, err
-	}
-
-	return &data, nil
-}
-
+// GetAllMedsData returns all assets found in world state
 func (s *SmartContract) GetAllMedsData(ctx contractapi.TransactionContextInterface) ([]*MedsData, error) {
 	resultsIterator, err := ctx.GetStub().GetStateByRange("", "")
 	if err != nil {
@@ -72,7 +64,7 @@ func (s *SmartContract) GetAllMedsData(ctx contractapi.TransactionContextInterfa
 	}
 	defer resultsIterator.Close()
 
-	var medsDataList []*MedsData
+	var allMedsData []*MedsData
 	for resultsIterator.HasNext() {
 		queryResponse, err := resultsIterator.Next()
 		if err != nil {
@@ -84,8 +76,18 @@ func (s *SmartContract) GetAllMedsData(ctx contractapi.TransactionContextInterfa
 		if err != nil {
 			return nil, err
 		}
-		medsDataList = append(medsDataList, &medsData)
+		allMedsData = append(allMedsData, &medsData)
 	}
 
-	return medsDataList, nil
+	return allMedsData, nil
+}
+
+// AssetExists returns true when asset with given ID exists in world state
+func (s *SmartContract) AssetExists(ctx contractapi.TransactionContextInterface, id string) (bool, error) {
+	assetJSON, err := ctx.GetStub().GetState(id)
+	if err != nil {
+		return false, fmt.Errorf("failed to read from world state: %v", err)
+	}
+
+	return assetJSON != nil, nil
 }
